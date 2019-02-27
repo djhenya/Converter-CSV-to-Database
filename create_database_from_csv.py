@@ -8,6 +8,9 @@ from columns import COLUMN_NAMES
 
 
 class Creator():
+    '''
+    Класс для копирования бухгалтерской (финансовой) отчетности предприятий и организаций (по данным Росстата) в формате .csv в БД PostgreSQL.
+    '''
 
     def __init__(self, host, user_name, user_pwd):
         self.host = host
@@ -15,6 +18,9 @@ class Creator():
         self.user_pwd = user_pwd
 
     def create_database(self, db_name):
+        '''
+        Функция для создания БД.
+        '''
         try:
             connect_str = "dbname='postgres' user={} host={} password={}".format(self.user_name, self.host, self.user_pwd)
             con = psycopg2.connect(connect_str)
@@ -38,6 +44,11 @@ class Creator():
             del cur, con
 
     def create_table(self, db_name, port, table_name, columns_file, column_types, primary_keys):
+        '''
+        Функция для создания и разметки таблицы в БД для бухгалтерской (финансовой) отчетности предприятий и организаций (по данным Росстата)
+        за ОДИН (!) год.
+        При разметке используется файла формата данных в формате .csv .
+        '''
         try:
             conn = psycopg2.connect(
                 host=self.host,
@@ -50,6 +61,7 @@ class Creator():
             # return
             sys.exit(str(e))
 
+        # Проверка наличия таблицы в базе
         try:
             cursor = conn.cursor()
             cursor.execute(
@@ -63,7 +75,7 @@ class Creator():
             # return
             sys.exit(str(e))
 
-        if not cursor.fetchone()[0]:
+        if not cursor.fetchone()[0]: # Если таблица отсутствует в базе, то она создаётся.
             try:
                 with open(columns_file, 'r') as csv_file:
                     csv_file.read(216)
@@ -105,7 +117,7 @@ class Creator():
                 #                         PRIMARY KEY(Наименование, ИНН)
                 #                         );'''
 
-                cursor.execute(statement)
+                cursor.execute(statement) # Здесь выполняется один большой запрос (statement) на создание таблицы с 266 полями
                 conn.commit()
             except Exception as e:
                 if cursor:
@@ -116,7 +128,7 @@ class Creator():
                 # return
                 sys.exit(str(e))
 
-        else:
+        else: # Если таблица присутствует в базе, то она не пересоздается, а выводится следующее сообщение:
             print('Table creation error: table "{}" already exists'.format(table_name))
 
         if cursor:
@@ -125,6 +137,9 @@ class Creator():
             conn.close()
 
     def copy_from_csv(self, db_name, port, table_name, data_file):
+        '''
+        Функция для записи данных из .csv в таблицу, созданную и размеченную при помощи метода create_table.
+        '''
         try:
             conn = psycopg2.connect(
                 host=self.host,
@@ -145,10 +160,9 @@ class Creator():
 
         print('Copying started at {}'.format(datetime.now()))
 
-        '''Вариант 1. Время выполнения: ~26 минут'''
+        '''Вариант 1. Время выполнения для 2,5 млн строк: ~26 минут'''
         try:
-            stm = '''COPY {} FROM %s DELIMITER ';' CSV QUOTE '^' ENCODING 'windows-1251';'''.format(
-                table_name)  # ENCODING 'windows-1251'
+            stm = '''COPY {} FROM %s DELIMITER ';' CSV QUOTE '^' ENCODING 'windows-1251';'''.format(table_name)
             cursor.execute(stm, (data_file,))
             print('Copying ended at {}'.format(datetime.now()))
             conn.commit()
@@ -162,34 +176,34 @@ class Creator():
             conn.close()
 
 
-# '''Вариант 2. Время выполнения: ~39 минут'''
-# try:
-#     arr = []
-#     ss = r'%s, '*265 + r'%s'
-#     statement = '''INSERT INTO fs2016_dev VALUES(%s)''' %ss
+        # '''Вариант 2. Время выполнения для 2,5 млн строк: ~39 минут'''
+        # try:
+        #     arr = []
+        #     ss = r'%s, '*265 + r'%s'
+        #     statement = '''INSERT INTO fs2016_dev VALUES(%s)''' %ss
 
-#     with open(data_file, 'r') as csv_file1:
-#         # dialect = csv.Sniffer().sniff(csv_file1.read(10240)) # автоопределение форматирования csv-файла
-#         # csv_file1.seek(0) # откат ридера к началу файла
-#         reader1 = csv.reader(csv_file1, delimiter='\n')
+        #     with open(data_file, 'r') as csv_file1:
+        #         # dialect = csv.Sniffer().sniff(csv_file1.read(10240)) # автоопределение форматирования csv-файла
+        #         # csv_file1.seek(0) # откат ридера к началу файла
+        #         reader1 = csv.reader(csv_file1, delimiter='\n')
 
-#         for row1 in reader1:
-#             # r = row1[0].replace(';', '\', \'')
-#             r = row1[0].split(';')
-#             cursor.execute(statement, (r, )) # Вариант 2.1
-#             # arr.append(r) # Вариант 2.2
+        #         for row1 in reader1:
+        #             # r = row1[0].replace(';', '\', \'')
+        #             r = row1[0].split(';')
+        #             cursor.execute(statement, (r, )) # Вариант 2.1
+        #             # arr.append(r) # Вариант 2.2
 
-#     # try:
-#     #     cursor.executemany(statement, arr # Вариант 2.2
-#     # except psycopg2.IntegrityError as e:
-#     #     conn.rollback()
-#     #     print(e)
+        #     # try:
+        #     #     cursor.executemany(statement, arr # Вариант 2.2
+        #     # except psycopg2.IntegrityError as e:
+        #     #     conn.rollback()
+        #     #     print(e)
 
-#     print(datetime.now())
-#     conn.commit()
-# except Exception as e:
-#     conn.rollback()
-#     print(e)
-# finally:
-#     if conn:
-#         conn.close()
+        #     print(datetime.now())
+        #     conn.commit()
+        # except Exception as e:
+        #     conn.rollback()
+        #     print(e)
+        # finally:
+        #     if conn:
+        #         conn.close()
